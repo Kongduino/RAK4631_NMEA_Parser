@@ -219,11 +219,12 @@ void loop() {
     string nextLine = userStrings[0];
     userStrings.erase(userStrings.begin());
     if (nextLine.substr(0, 1) != "$") {
-      Serial.print("Not an NMEA string!\n>> ");
-      Serial.println(nextLine.c_str());
+      // Serial.print("Not an NMEA string!\n>> ");
+      // Serial.println(nextLine.c_str());
       return;
     } else {
       vector<string>result = parseNMEA(nextLine);
+      if (result.size() == 0) return;
       string verb = result.at(0);
       if (verb == "$GPRMC") {
         parseGPRMC(result);
