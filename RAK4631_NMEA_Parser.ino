@@ -188,16 +188,16 @@ void setup() {
   Serial.println("Turning on port");
   digitalWrite(WB_IO2, 1);
   delay(100);
-  Serial2.begin(9600);
+  Serial1.begin(9600);
   delay(100);
-  Serial.println("Serial2 ready!");
+  Serial.println("Serial1 ready!");
 }
 
 bool waitForDollar = true;
 
 void loop() {
-  if (Serial2.available()) {
-    char c = Serial2.read();
+  if (Serial1.available()) {
+    char c = Serial1.read();
     if (waitForDollar && c == '$') {
       waitForDollar = false;
       buffer[0] = '$';
@@ -205,7 +205,7 @@ void loop() {
     } else if (waitForDollar == false) {
       if (c == 13) {
         buffer[ix] = 0;
-        c = Serial2.read();
+        c = Serial1.read();
         delay(50);
         string nextLine = string(buffer);
         userStrings.push_back(nextLine.substr(0, nextLine.size() - 3));
