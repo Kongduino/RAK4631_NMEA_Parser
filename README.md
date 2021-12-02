@@ -2,7 +2,7 @@
 
 This is a tokenizer and parser for raw NMEA sentences. This is not intended (yet anyway) for production, but as an exercice in re-inventing the wheel. There are other reasons for me to do this, including a smaller footprint (I need that code to be as small as possible). Suffice to say, I had good enough reasons to do this, and am happy to put it up there for others to enjoy. Or not.
 
-So far it recognizes 7 NMEA verbs, the most common the [ublox module](https://store.rakwireless.com/collections/wisblock-sensor/products/rak1910-max-7q-gnss-location-sensor) spits out:
+So far it recognizes 8 NMEA verbs, the most common the [ublox module](https://store.rakwireless.com/collections/wisblock-sensor/products/rak1910-max-7q-gnss-location-sensor) spits out:
 
 * $GPRMC
 * $GPGSV
