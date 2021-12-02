@@ -7,6 +7,7 @@ So far it recognizes 7 NMEA verbs, the most common the [ublox module](https://st
 * $GPRMC
 * $GPGSV
 * $GPGGA
+* $GPZDA (if available)
 * $GPGLL
 * $GPGSA
 * $GPVTG
@@ -14,7 +15,20 @@ So far it recognizes 7 NMEA verbs, the most common the [ublox module](https://st
 
 Incoming sentences are stored into a stack, then the code reads every sentence, and tries to fail, if it has to, as fast as possible, in order to move on to the next sentence, and empty the stack.
 
-Data that is identical to a previous fix (SIV, lat/long) is not repeated in the Serial terminal, in order to make it a little more readable. Ideally, all this data shouldn't be dumped to Serial, but displayed on an OLED or TFT at fixed positions.
+Data that is identical to a previous fix (SIV, lat/long) is not repeated in the Serial terminal, in order to make it a little more readable, unless `fixInterval` milliseconds have passed.
+
+Ideally, all this data shouldn't be dumped to Serial, but displayed on an OLED or TFT at fixed positions.
+
+## BLE
+
+I added BLE UART output. You get data for:
+
+* $GPRMC (UTC time, coordinates)
+* $GPGGA (UTC time, coordinates)
+* $GPZDA (UTC date & time, if available)
+* $GPGLL (coordinates)
+* $GPGSV (SIV)
+* $GPTXT (Text messages)
 
 ### More information
 
