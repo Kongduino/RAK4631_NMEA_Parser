@@ -19,18 +19,176 @@ void __throw_out_of_range_fmt(char const*, ...) {}
 #include <Arduino.h>
 #include <Adafruit_TinyUSB.h>
 #include <bluefruit.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <SX126x-RAK4630.h>
 
 char buffer[256];
+char msgBuf[256];
 uint8_t ix = 0;
 vector<string> userStrings;
 char UTC[7] = {0};
 uint8_t SIV = 0;
-float latitude, longitude;
+float latitude = 255.0, longitude = 255.0;
 BLEUart g_BleUart;
 /** Flag if BLE UART client is connected */
 bool g_BleUartConnected = false;
-double lastFix = 0;
+double lastFix = 0, lastPing = 0;
 double fixInterval = 30000;
+
+// LoRa
+static RadioEvents_t RadioEvents;
+// Define LoRa parameters
+#define RF_FREQUENCY 868125000 // Hz
+#define TX_OUTPUT_POWER 22 // dBm
+#define LORA_BANDWIDTH 0 // [0: 125 kHz, 1: 250 kHz, 2: 500 kHz, 3: Reserved]
+#define LORA_SPREADING_FACTOR 12 // [SF7..SF12]
+#define LORA_CODINGRATE 1 // [1: 4/5, 2: 4/6,  3: 4/7,  4: 4/8]
+#define LORA_PREAMBLE_LENGTH 8 // Same for Tx and Rx
+#define LORA_SYMBOL_TIMEOUT 0 // Symbols
+#define LORA_FIX_LENGTH_PAYLOAD_ON false
+#define LORA_IQ_INVERSION_ON false
+#define RX_TIMEOUT_VALUE 100000
+#define TX_TIMEOUT_VALUE 3000
+
+void hexDump(unsigned char *buf, uint16_t len) {
+  String s = "|", t = "| |";
+  Serial.println(F("  |.0 .1 .2 .3 .4 .5 .6 .7 .8 .9 .a .b .c .d .e .f |"));
+  Serial.println(F("  +------------------------------------------------+ +----------------+"));
+  for (uint16_t i = 0; i < len; i += 16) {
+    for (uint8_t j = 0; j < 16; j++) {
+      if (i + j >= len) {
+        s = s + "   "; t = t + " ";
+      } else {
+        char c = buf[i + j];
+        if (c < 16) s = s + "0";
+        s = s + String(c, HEX) + " ";
+        if (c < 32 || c > 127) t = t + ".";
+        else t = t + (String(c));
+      }
+    }
+    uint8_t index = i / 16;
+    Serial.print(index, HEX); Serial.write('.');
+    Serial.println(s + t + "|");
+    s = "|"; t = "| |";
+  }
+  Serial.println(F("  +------------------------------------------------+ +----------------+"));
+}
+
+float toRad(float x) {
+  return x * 3.141592653 / 180;
+}
+
+float lat2 = 22.459294918148565, lon2 = 114.00072540422914;
+
+float haversine(float lat1, float lon1) {
+  float R = 6371; // km
+  float x1 = lat2 - lat1;
+  float dLat = toRad(x1);
+  float x2 = lon2 - lon1;
+  float dLon = toRad(x2);
+  float a = sin(dLat / 2) * sin(dLat / 2) +
+            cos(toRad(lat1)) * cos(toRad(lat2)) *
+            sin(dLon / 2) * sin(dLon / 2);
+  float c = 2 * atan2(sqrt(a), sqrt(1 - a));
+  float d = R * c;
+  return round(d * 100.0) / 100;
+}
+
+
+void OnTxDone(void) {
+  digitalWrite(LED_BLUE, HIGH);
+  Serial.println("Tx done!");
+  delay(500);
+  if (g_BleUartConnected) g_BleUart.println("Tx done!");
+  digitalWrite(LED_BLUE, LOW);
+  digitalWrite(LED_GREEN, LOW);
+  Radio.Rx(RX_TIMEOUT_VALUE);
+}
+
+void OnTxTimeout(void) {
+  digitalWrite(LED_BLUE, HIGH);
+  Serial.println("Tx Timeout!");
+  delay(500);
+  if (g_BleUartConnected) g_BleUart.println("Tx Timeout!");
+  digitalWrite(LED_BLUE, LOW);
+  digitalWrite(LED_GREEN, LOW);
+  Radio.Rx(RX_TIMEOUT_VALUE);
+}
+
+void OnRxTimeout(void) {
+  digitalWrite(LED_BLUE, HIGH);
+  Serial.println("\nRx Timeout!");
+  delay(500);
+  if (g_BleUartConnected) g_BleUart.println("Rx Timeout!");
+  digitalWrite(LED_BLUE, LOW);
+  Radio.Rx(RX_TIMEOUT_VALUE);
+}
+
+void OnRxError(void) {
+  digitalWrite(LED_BLUE, HIGH);
+  Serial.println("Rx Error!");
+  delay(500);
+  if (g_BleUartConnected) g_BleUart.println("Rx Error!");
+  digitalWrite(LED_BLUE, LOW);
+  Radio.Rx(RX_TIMEOUT_VALUE);
+}
+
+void OnRxDone(uint8_t *payload, uint16_t ix, int16_t rssi, int8_t snr) {
+  digitalWrite(LED_GREEN, HIGH); // Turn on Green LED
+  Serial.println("################################");
+  if (g_BleUartConnected) g_BleUart.println("#######################");
+  sprintf(buffer, "Message: %s", (char*)payload);
+  Serial.println(buffer);
+  if (g_BleUartConnected) g_BleUart.println(buffer);
+  if (latitude != 255.0 && longitude != 255.0) {
+    float distance = haversine(latitude, longitude);
+    sprintf(buffer, "Distance: %d m", (int)distance);
+  } else {
+    sprintf(buffer, "Distance: unknown...");
+  }
+  Serial.println(buffer);
+  if (g_BleUartConnected) g_BleUart.println(buffer);
+  Serial.println("################################");
+  sprintf(buffer, "RSSI: %-d, SNR: %-d", rssi, snr);
+  Serial.println(buffer);
+  if (g_BleUartConnected) {
+    g_BleUart.println(buffer);
+    g_BleUart.println("#######################");
+  }
+  digitalWrite(LED_GREEN, LOW); // Turn off Green LED
+  Radio.Rx(RX_TIMEOUT_VALUE);
+}
+
+//void OnCadDone(bool cadResult) {
+//  if (cadResult) {
+//    Serial.println("CAD returned channel busy\n");
+//    if (g_BleUartConnected) g_BleUart.println("CAD busy!");
+//  }
+//  Serial.println("Sending packet!");
+//  if (g_BleUartConnected) g_BleUart.println("Sending packet!");
+//  Serial.print((char*)msgBuf);
+//  if (g_BleUartConnected) g_BleUart.print((char*)msgBuf);
+//  digitalWrite(LED_GREEN, HIGH);
+//  Radio.Send((uint8_t *)msgBuf, strlen((char*)msgBuf));
+//  delay(500);
+//  digitalWrite(LED_GREEN, LOW);
+//  Radio.Rx(RX_TIMEOUT_VALUE);
+//}
+
+void sendUpdate() {
+  if (latitude == 255.0 && longitude == 255.0) sprintf(msgBuf, "Lat/Long: not available [255]\n");
+  else if (latitude == 0.0 || longitude == 0.0) sprintf(msgBuf, "Lat/Long: not available [0]\n");
+  else sprintf(msgBuf, "Lat/Long: %3.8f, %3.8f / SIV: %d\n", latitude, longitude, SIV);
+  Serial.println("Sending packet! " + String(strlen(msgBuf)));
+  if (g_BleUartConnected) g_BleUart.println("Sending packet!");
+  Serial.println((char*)msgBuf);
+  if (g_BleUartConnected) g_BleUart.print((char*)msgBuf);
+  digitalWrite(LED_GREEN, HIGH);
+  Radio.Standby();
+  Radio.Send((uint8_t *)msgBuf, strlen((char*)msgBuf));
+  delay(500);
+}
 
 float parseDegrees(const char *term) {
   float value = (float)(atof(term) / 100.0);
@@ -289,11 +447,48 @@ void setup() {
   Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
   Bluefruit.Advertising.setFastTimeout(30); // number of seconds in fast mode
   Bluefruit.Advertising.start(0); // 0 = Don't stop advertising after n seconds
+  Serial.println("=====================================");
+  Serial.println("             LoRa Setup");
+  Serial.println("=====================================");
+  // Initialize the Radio callbacks
+  lora_rak4630_init();
+  RadioEvents.TxDone = OnTxDone;
+  RadioEvents.RxDone = OnRxDone;
+  RadioEvents.TxTimeout = OnTxTimeout;
+  RadioEvents.RxTimeout = OnRxTimeout;
+  RadioEvents.RxError = OnRxError;
+  RadioEvents.CadDone = NULL;
+  // Initialize the Radio
+  Radio.Init(&RadioEvents);
+  // Set Radio channel
+  Radio.SetChannel(RF_FREQUENCY);
+  Serial.println("SF = " + String(LORA_SPREADING_FACTOR));
+  Serial.println("BW = " + String(LORA_BANDWIDTH));
+  Serial.println("CR = " + String(LORA_CODINGRATE));
+  Serial.println("Tx Power = " + String(TX_OUTPUT_POWER));
+  // Set Radio TX configuration
+  Radio.SetTxConfig(
+    MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
+    LORA_SPREADING_FACTOR, LORA_CODINGRATE,
+    LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
+    true, 0, 0, LORA_IQ_INVERSION_ON, TX_TIMEOUT_VALUE);
+  SX126xSetTxParams(TX_OUTPUT_POWER, RADIO_RAMP_40_US);
+  Radio.SetRxConfig(
+    MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
+    LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
+    LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
+    0, true, 0, 0, LORA_IQ_INVERSION_ON, true);
+  Serial.println("Starting Radio.Rx");
+  Radio.Rx(RX_TIMEOUT_VALUE);
 }
 
 bool waitForDollar = true;
 
 void loop() {
+  if (millis() - lastPing > 30000) {
+    sendUpdate();
+    lastPing = millis();
+  }
   if (Serial1.available()) {
     char c = Serial1.read();
     if (waitForDollar && c == '$') {
