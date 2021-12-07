@@ -30,9 +30,13 @@ vector<string> userStrings;
 char UTC[7] = {0};
 uint8_t SIV = 0;
 float latitude = 255.0, longitude = 255.0;
+
 BLEUart g_BleUart;
+BLEClientDis clientDis; // device information client
+// BLEClientUart g_BleUart;
 /** Flag if BLE UART client is connected */
 bool g_BleUartConnected = false;
+
 double lastFix = 0, lastPing = 0;
 double fixInterval = 30000;
 
@@ -405,6 +409,67 @@ void ble_disconnect_callback(uint16_t conn_handle, uint8_t reason) {
   Serial.println("BLE client disconnected");
 }
 
+void handleBleuartRx() {
+  Serial.print("[RX]: ");
+  char buff[256];
+  uint8_t ix = 0;
+  while (g_BleUart.available()) {
+    uint8_t ch = (uint8_t) g_BleUart.read();
+    if (ch > 31) {
+      Serial.write(ch);
+      buff[ix++] = ch;
+    }
+    buff[ix] = '\0';
+  }
+  Serial.write('\n');
+  if (buff[0] == '/') {
+    // prefix for commands
+    char cmd[5];
+    memcpy(cmd, buff, 4);
+    cmd[4] = 0;
+    if (strcmp("/sf ", cmd) == 0) {
+      // Set SF
+      uint8_t value = atoi(buff + 4);
+      if (value < 7 || value > 12) {
+        sprintf(buff, "Invalid SF value: %d [7-12]\n", value);
+        Serial.print(buff);
+        g_BleUart.print(buff);
+      } else {
+        sprintf(buff, "Set SF to %d\n", value);
+        Serial.print(buff);
+        g_BleUart.print(buff);
+        // do it fo' real
+      }
+    } else if (strcmp("/bw ", cmd) == 0) {
+      // Set BW
+      uint8_t value = atoi(buff + 4);
+      if (value < 0 || value > 2) {
+        sprintf(buff, "Invalid BW value: %d [0-2]\n", value);
+        Serial.print(buff);
+        g_BleUart.print(buff);
+      } else {
+        sprintf(buff, "Set BW to %d\n", value);
+        Serial.print(buff);
+        g_BleUart.print(buff);
+        // do it fo' real
+      }
+    } else if (strcmp("/fq ", cmd) == 0) {
+      // Set BW
+      float value = atof(buff + 4);
+      if (value < 860.0 || value > 999.0) {
+        sprintf(buff, "Invalid frequency: %3.3f [860-999]\n", value);
+        Serial.print(buff);
+        g_BleUart.print(buff);
+      } else {
+        sprintf(buff, "Set frequency to %3.3f\n", value);
+        Serial.print(buff);
+        g_BleUart.print(buff);
+        // do it fo' real
+      }
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   time_t timeout = millis();
@@ -437,6 +502,7 @@ void setup() {
   Bluefruit.Periph.setConnectCallback(ble_connect_callback);
   Bluefruit.Periph.setDisconnectCallback(ble_disconnect_callback);
   // Configure and Start BLE Uart Service
+  clientDis.begin();
   g_BleUart.begin();
   // Set up and start advertising
   // Advertising packet
@@ -462,9 +528,10 @@ void setup() {
   Radio.Init(&RadioEvents);
   // Set Radio channel
   Radio.SetChannel(RF_FREQUENCY);
+  Serial.println("Freq = " + String(RF_FREQUENCY) + " MHz");
   Serial.println("SF = " + String(LORA_SPREADING_FACTOR));
-  Serial.println("BW = " + String(LORA_BANDWIDTH));
-  Serial.println("CR = " + String(LORA_CODINGRATE));
+  Serial.println("BW = " + String(LORA_BANDWIDTH) + " KHz");
+  Serial.println("CR = 4/" + String(LORA_CODINGRATE));
   Serial.println("Tx Power = " + String(TX_OUTPUT_POWER));
   // Set Radio TX configuration
   Radio.SetTxConfig(
@@ -488,6 +555,9 @@ void loop() {
   if (millis() - lastPing > 30000) {
     sendUpdate();
     lastPing = millis();
+  }
+  if (g_BleUart.available()) {
+    handleBleuartRx();
   }
   if (Serial1.available()) {
     char c = Serial1.read();
@@ -530,9 +600,9 @@ void loop() {
       } else if (verb.substr(3, 3) == "GLL") {
         parseGPGLL(result);
       } else if (verb.substr(3, 3) == "GSA") {
-        parseGPGSA(result);
+        // parseGPGSA(result);
       } else if (verb.substr(3, 3) == "VTG") {
-        parseGPVTG(result);
+        // parseGPVTG(result);
       } else if (verb.substr(3, 3) == "TXT") {
         parseGPTXT(result);
       } else {
