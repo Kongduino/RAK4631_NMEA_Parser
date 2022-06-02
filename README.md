@@ -32,4 +32,4 @@ I added BLE UART output. You get data for:
 
 ### More information
 
-For more information about the GNSS module, see the [Quick start Guide](https://docs.rakwireless.com/Product-Categories/WisBlock/RAK1910/Quickstart/) on RAK's Documentation Center website.
+For more information about the Wisblock GNSS module, see the [Quick start Guide](https://docs.rakwireless.com/Product-Categories/WisBlock/RAK1910/Quickstart/) on RAK's Documentation Center website.
